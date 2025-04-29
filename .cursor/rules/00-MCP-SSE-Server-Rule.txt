@@ -1,77 +1,89 @@
-# --- MCP SSE Server Rules ---
+# --- MCP SSE Server Rules (Revised) ---
 
-## Goal: Define how to build and run MCP servers that use SSE (Server-Sent Events) over HTTP.
+## Goal: Define how to build and run MCP servers using SSE over HTTP with Uvicorn/Starlette.
 
 ## Note: SSE servers run independently and are NOT managed directly by Cursor via the toggle in Settings -> MCP. They communicate over the network.
 
 ---
 
-### Rule SSE-S1: Use SSE Transport and Specify Port
-**Problem:** Server tries to use stdio or doesn't listen on a network port.
-**Rule:** In the server script, explicitly set `transport="sse"` and provide a `port` number in the `mcp.run()` call. Choose a port that is unlikely to conflict with other services (e.g., 8080, 8081, etc.).
-**Example Server Code:**
+### Rule SSE-S1 (Revised): Structure Server Script for ASGI (Uvicorn/Starlette)
+**Problem:** Server script tries to run itself using `mcp.run(transport='sse')`, which caused issues with host/port configuration and handling HTTP requests.
+**Rule:** The server Python script (`*_sse.py`) should **only define** the `mcp = FastMCP(...)` instance and its tools/resources. It should **not** call `mcp.run()`. Instead, create an ASGI application (e.g., using Starlette) and mount the MCP SSE handler to it.
+**Example Server Code (`*_sse.py`):**
 ```python
+from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
 mcp = FastMCP("my-sse-server")
 
-if __name__ == "__main__":
-    # Correct:
-    mcp.run(transport="sse", port=8080, host="127.0.0.1") # Use 0.0.0.0 for wider accessibility if needed
+@mcp.tool()
+def my_tool(arg: str) -> str:
+    return f"Processed: {arg}"
 
-    # Incorrect:
-    # mcp.run(transport="stdio")
-    # mcp.run(transport="sse") # Missing port
+# Create the ASGI app instance (e.g., 'app')
+app = Starlette(routes=[
+    Mount('/', app=mcp.sse_app()) # Mount the MCP handler
+])
+
+# No if __name__ == "__main__": block needed
 ```
-**Note:** Specify `host="127.0.0.1"` (localhost) for local testing or `host="0.0.0.0"` if the server needs to be accessible from other machines on the network (e.g., for actual remote use).
 
 ---
 
-### Rule SSE-S2: Run Server Manually and Independently
-**Problem:** Trying to manage an SSE server via the Cursor MCP settings toggle.
-**Rule:** SSE servers MUST be started manually (e.g., `python your_server_script.py` or via a start script) in a separate terminal process. Cursor does NOT manage the lifecycle (start/stop) of SSE servers through its UI settings; it only connects to them as a client.
-**Example:**
+### Rule SSE-S2 (Revised): Use Uvicorn via Start Script for Execution
+**Problem:** Manually running `python *_sse.py` doesn't start a web server. Trying to use `mcp.run()` was unreliable.
+**Rule:** SSE servers MUST be started using an ASGI server like Uvicorn. Use a startup script (e.g., `start_sse.sh`) that:
+    1. Finds the virtual environment Python (`venv/bin/python`).
+    2. Ensures necessary dependencies (`mcp`, `uvicorn`, `starlette`) are installed in the venv.
+    3. Executes Uvicorn, telling it to load the ASGI `app` object from your server script (`uvicorn module_name:app --host <ip> --port <port>`).
+**Example `start_sse.sh`:**
 ```bash
-# Activate venv if needed
-source venv/bin/activate
-# Run the server
-python file_reader_server_sse.py
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
+
+# Ensure dependencies
+"$VENV_PYTHON" -m pip install -q mcp "uvicorn[standard]" starlette
+if [ $? -ne 0 ]; then exit 1; fi
+
+# Run Uvicorn
+APP_MODULE="file_reader_server_sse:app" # Module:VariableName
+HOST="127.0.0.1"
+PORT="8080"
+echo "Starting Uvicorn server for $APP_MODULE on $HOST:$PORT..."
+"$VENV_PYTHON" -m uvicorn --host "$HOST" --port "$PORT" "$APP_MODULE"
 ```
 
 ---
 
 ### Rule SSE-S3: Configure Discovery via .mcp.json (Recommended)
-**Problem:** Clients (like Cursor) don't know where to find the running SSE server.
-**Rule:** For potential auto-discovery by clients, create or update a `.mcp.json` file *within the project directory*. This file should specify `"type": "sse"` and the full `"url"` where the server is listening.
+**Problem:** Clients don't know where the running SSE server is.
+**Rule:** For potential auto-discovery, create/update a project-local `.mcp.json`. Specify `"type": "sse"` and the **base `"url"`** where Uvicorn is listening (e.g., `http://127.0.0.1:8080`). Clients will typically connect to the `/sse` path relative to this URL.
 **Example `.mcp.json`:**
 ```json
 {
   "mcpServers": {
-    "file-reader": { // Key matches FastMCP("file-reader")
+    "file-reader-sse": { // Key matches FastMCP("...") name
       "type": "sse",
-      "url": "http://127.0.0.1:8080", // URL where server is running
+      "url": "http://127.0.0.1:8080", // Base URL
       "description": "Reads files via SSE"
-      // NO "command", "args", "enabled" like in global Cursor config
+      // Tools schema optional but helpful for clients
     }
   }
 }
 ```
-**Note:** This project-local `.mcp.json` is for discovery, distinct from the global `~/.cursor/mcp.json` used for Cursor-managed `stdio` servers.
 
 ---
 
 ### Rule SSE-S4: Ensure Network Accessibility
-**Problem:** Client cannot connect to the server (connection refused, timeout).
-**Rule:** Verify that the host and port the server is listening on (`host` and `port` in `mcp.run()`) are accessible from the client. Check firewalls or network configurations if the client is on a different machine or container. Use tools like `curl` or `telnet` to test basic connectivity to the server's URL (e.g., `curl http://127.0.0.1:8080/health`).
+**Problem:** Client cannot connect (connection refused, timeout, 404).
+**Rule:** Verify Uvicorn started correctly and is listening on the expected host/port (check terminal logs). Ensure the client is connecting to the correct URL, **typically including the `/sse` path** (e.g., `http://127.0.0.1:8080/sse`). Check firewalls.
 
 ---
 
 ### Rule SSE-S5: Use Virtual Environment
-**Problem:** Server crashes on startup due to missing dependencies when run manually.
-**Rule:** Always run the SSE server within its activated virtual environment to ensure all dependencies (like `mcp`) are available. Use a startup script (like `start.sh`) that activates the venv first.
-**Example `start_sse.sh`:**
-```bash
-#!/bin/bash
-source venv/bin/activate
-python file_reader_server_sse.py
-```
+**Problem:** Server crashes on startup due to missing dependencies.
+**Rule:** The startup script (`start_sse.sh`) MUST ensure dependencies (`mcp`, `uvicorn`, `starlette`) are installed and run Uvicorn using the **explicit path** to the venv Python (`./venv/bin/python`).
 
 --- 

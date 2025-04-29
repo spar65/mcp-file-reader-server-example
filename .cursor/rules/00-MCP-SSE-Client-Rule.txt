@@ -1,53 +1,84 @@
-# --- MCP SSE Client Interaction Rules ---
+# --- MCP SSE Client Interaction Rules (Revised) ---
 
-## Goal: Ensure reliable interaction with independently running SSE MCP servers from clients (like Cursor or custom scripts).
+## Goal: Ensure reliable interaction with independently running SSE MCP servers using the mcp Python library.
 
 ---
 
-### Rule SSE-C1: Use Server URL for Connection
-**Problem:** Client attempts to connect via stdio or doesn't know the server's address.
-**Rule:** Clients connecting to an SSE server MUST use the server's HTTP URL (e.g., `http://127.0.0.1:8080`). This URL might be discovered via a project's `.mcp.json` file or configured manually in the client.
-**Example Client Code (Conceptual):**
+### Rule SSE-C1 (Revised): Use `sse_client` and `ClientSession` for Connection
+**Problem:** Client cannot connect, gets import errors, or `TypeError` on instantiation.
+**Rule:** The correct pattern to connect to an SSE server is:
+    1. Import `sse_client` from `mcp.client.sse` and `ClientSession` from `mcp`.
+    2. Use `sse_client(url="http://<host>:<port>/sse")` to get read/write streams (typically within an `async with` block or using `AsyncExitStack`). **Note the `/sse` path is usually required.**
+    3. Pass these streams to `ClientSession(read_stream, write_stream)` (again, usually within `async with` or `AsyncExitStack`).
+    4. Initialize the session using `await session.initialize()`.
+**Example Client Code:**
 ```python
-from mcp.client import Client
+import asyncio
+from contextlib import AsyncExitStack
+from mcp.client.sse import sse_client
+from mcp import ClientSession, McpError
 
-# Assuming server is at http://127.0.0.1:8080
-client = Client(base_url="http://127.0.0.1:8080")
+SERVER_URL = "http://127.0.0.1:8080/sse"
 
-response = client.tools.file_reader.read_file(filename="test.txt")
-print(response)
+async def connect_and_list():
+    async with AsyncExitStack() as stack:
+        streams_context = sse_client(url=SERVER_URL)
+        read, write = await stack.enter_async_context(streams_context)
+        session_context = ClientSession(read, write)
+        session = await stack.enter_async_context(session_context)
+        await session.initialize()
+        print("Connected and initialized!")
+        tools = await session.list_tools()
+        print(f"Tools: {[t.name for t in tools.tools]}")
+
+# asyncio.run(connect_and_list())
 ```
+**Avoid:** Trying to import a high-level `Client` class or passing `base_url` directly to `ClientSession`.
 
 ---
 
 ### Rule SSE-C2: Verify Server is Running Manually
-**Problem:** Client connection fails (timeout, connection refused).
-**Rule:** Unlike `stdio` servers managed by Cursor, SSE servers run independently. Before attempting to connect, ensure the SSE server process has been started manually and is actively listening on the expected URL and port. Check the server's terminal output for confirmation or errors.
+**Problem:** Client connection fails (timeout, connection refused, 404, 500).
+**Rule:** Ensure the SSE server process (e.g., started via `./start_sse.sh`) is running and actively listening. Check the server's terminal output for Uvicorn startup messages and any runtime errors.
 
 ---
 
-### Rule SSE-C3: Utilize `.mcp.json` for Discovery (If Available)
-**Problem:** Manually configuring the server URL in the client is cumbersome or inflexible.
-**Rule:** Clients like Cursor *may* automatically discover running SSE servers if the server's project contains a correctly formatted `.mcp.json` file specifying `"type": "sse"` and the correct `"url"`. Check Cursor's documentation or behavior to see if it supports discovering servers this way.
-**Note:** Relying on discovery might require specific project structures or Cursor features.
+### Rule SSE-C3: Use Correct Connection URL (Usually with `/sse` path)
+**Problem:** Client gets 404 Not Found when trying to connect.
+**Rule:** When using `mcp.client.sse.sse_client`, the URL must typically point to the specific SSE endpoint, which is often `/sse` relative to the server's base address (e.g., `http://127.0.0.1:8080/sse`). Even if the server framework mounts the handler at `/`, the client function expects the `/sse` path.
 
 ---
 
-### Rule SSE-C4: Match Server Name for Tool Usage (Same as Stdio)
-**Problem:** Cursor cannot find or use a tool from a specific server, even if connected.
-**Rule:** When invoking a tool via natural language or code, ensure the server name specified (e.g., `using mcp my-sse-server ...`) EXACTLY matches the server name key defined in the discovery `.mcp.json` (if used) and the name in the server's code (`FastMCP("my-sse-server")`).
-**Example Cursor Prompt:**
-`read test.txt using the file-reader server` // "file-reader" must match the server name
+### Rule SSE-C4 (Revised): Use Correct Tool Name in `call_tool`
+**Problem:** Connection successful, but tool call fails with "Unknown tool" error.
+**Rule:** When using `await session.call_tool(...)`, provide **only the tool name** exactly as defined in the server's `@mcp.tool()` decorator (or as listed by `session.list_tools()`). Do **not** prepend the server name.
+**Example:**
+```python
+# Correct:
+result = await session.call_tool("read_file", arguments={"filename": "test.txt"})
+
+# Incorrect:
+# result = await session.call_tool("file-reader-sse.read_file", ...)
+```
 
 ---
 
-### Rule SSE-C5: Check Network Path and Firewalls
+### Rule SSE-C5: Use Wrapper Script for Dependencies and Execution
+**Problem:** Client script fails with `ModuleNotFoundError` or runs using the wrong Python.
+**Rule:** Use a wrapper script (e.g., `run_sse_client.sh`) that explicitly:
+    1. Finds the correct virtual environment Python (`venv/bin/python`).
+    2. Ensures necessary client dependencies (`mcp`, `httpx`) are installed using the venv Python/pip.
+    3. Executes the client script using the venv Python.
+
+---
+
+### Rule SSE-C6: Check Network Path and Firewalls
 **Problem:** Client cannot reach the server despite it running (relevant for non-localhost).
 **Rule:** If the SSE server is running on a different host or within a container, ensure there's a clear network path between the client and server. Check for firewalls, incorrect IP addresses, or port mapping issues (e.g., in Docker).
 
 ---
 
-### Rule SSE-C6: Use Correct Tool Arguments (Same as Stdio)
+### Rule SSE-C7: Use Correct Tool Arguments
 **Problem:** Connection is successful, but the tool call itself fails.
 **Rule:** Ensure the arguments provided to the tool match what the tool function expects and that any required resources (like files in `~/mcp_data`) are accessible *to the server process*, wherever it may be running.
 
