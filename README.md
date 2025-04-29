@@ -43,8 +43,10 @@ This repository already includes a `cursor_mcp_config.json` file. You may need t
 {
   "mcpServers": {
     "file-reader": {
-      "command": "python",
-      "args": ["/FULL/PATH/TO/file_reader_server.py"],
+      "command": "/FULL/PATH/TO/YOUR/PROJECT/venv/bin/python",
+      "args": [
+        "/FULL/PATH/TO/YOUR/PROJECT/mcp-file-reader-example/file_reader_server.py"
+      ],
       "env": {}
     }
   }

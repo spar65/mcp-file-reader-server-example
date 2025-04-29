@@ -28,10 +28,10 @@ This file tells Cursor how to find, start, and manage your MCP servers. The entr
   "mcpServers": {
     "file-reader": {
       // <-- KEY: Must EXACTLY match FastMCP("file-reader")
-      "command": "/Users/spehargreg/Development/mcp-example/venv/bin/python", // <-- CRITICAL: Absolute path to venv Python
+      "command": "/Users/spehargreg/Development/mcp-file-reader-example/venv/bin/python", // <-- CRITICAL: Absolute path to venv Python
       "enabled": true,
       "args": [
-        "/Users/spehargreg/Development/mcp-example/file_reader_server.py"
+        "/Users/spehargreg/Development/mcp-file-reader-example/file_reader_server.py"
       ], // <-- CRITICAL: Absolute path to server script
       "env": {}
     }

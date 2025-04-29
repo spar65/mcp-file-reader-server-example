@@ -2,7 +2,7 @@
   "file-reader": {
     "type": "sse",
     "command": "python",
-    "args": ["/Users/spehargreg/Development/mcp-example/file_reader_server.py"],
+    "args": ["/Users/spehargreg/Development/mcp-file-reader-example/file_reader_server.py"],
     "env": {}
   }
 }
