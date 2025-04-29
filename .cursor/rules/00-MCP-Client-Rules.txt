@@ -1,0 +1,39 @@
+# --- Cursor MCP Client Interaction Rules ---
+
+## Goal: Ensure reliable interaction with MCP servers from clients (like Cursor or custom scripts).
+
+---
+
+### Rule 1: Match Server Name for Tool Usage
+**Problem:** Cursor cannot find or use a tool from a specific server.
+**Rule:** When invoking a tool via natural language or code, ensure the server name specified (e.g., `using mcp my-server-name ...`) EXACTLY matches the server name key defined in `~/.cursor/mcp.json` and the name in the server's code (`FastMCP("my-server-name")`).
+**Example Cursor Prompt:**
+`read test.txt using the file-reader server` // "file-reader" must match the config key
+
+---
+
+### Rule 2: Verify Server Status in Cursor UI
+**Problem:** Tool calls fail, commands don't work.
+**Rule:** Before attempting to use a server, check its status indicator (the dot) in Cursor Settings -> MCP. It MUST be green. If red or yellow, troubleshoot the server setup first (see `00-MCP-Server-Rules.txt`).
+
+---
+
+### Rule 3: Understand Server Capabilities (Tools, Resources)
+**Problem:** Asking the server to do something it doesn't support.
+**Rule:** Know which specific `tools` and `resources` the target MCP server *actually* exposes. The server's `@mcp.tool()` and `@mcp.resource()` decorators define these. Check the server code or documentation. Don't assume capabilities.
+**Example Check:** Verify the `file-reader` server has a `read_file` tool that takes a `filename` argument.
+
+---
+
+### Rule 4: Check Tool Arguments and File Paths
+**Problem:** Tool call fails with errors like "File not found" or "Invalid parameters".
+**Rule:** Ensure the arguments provided to the tool match what the tool function expects (e.g., correct filename, data format). If dealing with files, ensure the file exists in the location the *server* expects to read from (e.g., `~/mcp_data` for our `file-reader`). Remember the server runs in its own context.
+**Example:** For `read_file(filename="test.txt")`, ensure `~/mcp_data/test.txt` exists *on the machine where the server runs*.
+
+---
+
+### Rule 5: Restart Cursor for Connection Issues
+**Problem:** Persistent connection problems even if the server seems okay.
+**Rule:** If a server was previously red or having issues, even after fixing it, sometimes restarting the entire Cursor application is necessary to fully reset the client-side connection state.
+
+--- 

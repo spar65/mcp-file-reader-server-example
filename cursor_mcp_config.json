@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "file-reader": {
+      "command": "python",
+      "args": ["/Users/spehargreg/Development/mcp-example/file_reader_server.py"],
+      "env": {}
+    }
+  }
+}

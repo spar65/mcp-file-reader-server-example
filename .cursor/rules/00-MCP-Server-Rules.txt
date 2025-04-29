@@ -1,0 +1,102 @@
+# --- Cursor MCP Server Setup Rules ---
+
+## Goal: Ensure MCP servers configured in ~/.cursor/mcp.json run correctly when managed by Cursor.
+
+---
+
+### Rule 1: Naming Consistency
+**Problem:** Server shows red/disconnected despite running manually.
+**Rule:** The server name defined in the Python script (e.g., `FastMCP("my-server-name")`) MUST EXACTLY match the key used for the server entry in `~/.cursor/mcp.json` (e.g., `"my-server-name": { ... }`). Check for subtle differences like hyphens vs. underscores.
+**Example `mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "file-reader": { // <-- MUST MATCH server code name
+      // ... config ...
+    }
+  }
+}
+```
+**Example Server Code:**
+```python
+mcp = FastMCP("file-reader") # <-- MUST MATCH mcp.json key
+```
+
+---
+
+### Rule 2: Transport Method MUST be stdio
+**Problem:** Server status is red, often showing "Client closed".
+**Rule:** When Cursor manages the server process (via `mcp.json`), the server code MUST use the stdio transport. Do NOT use "sse".
+**Example Server Code:**
+```python
+# Correct:
+mcp.run(transport="stdio")
+
+# Incorrect for Cursor-managed servers:
+# mcp.run(transport="sse")
+```
+
+---
+
+### Rule 3: Specify Virtual Environment Python Path
+**Problem:** Server fails to start via Cursor ("Failed to create client" or red dot), often due to missing packages (like `mcp`) because Cursor uses the system Python, not the venv.
+**Rule:** In `~/.cursor/mcp.json`, set the `"command"` field to the *absolute path* of the Python executable *inside* your project's virtual environment.
+**Example `mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "my-server-name": {
+      "command": "/Users/username/path/to/project/venv/bin/python", // <-- Absolute path to venv Python
+      "enabled": true,
+      "args": ["/Users/username/path/to/project/server_script.py"], // <-- Absolute path to server script
+      "env": {}
+    }
+  }
+}
+```
+**Note:** Avoid using just `"python"` unless you are certain Cursor's environment resolves it correctly to your venv.
+
+---
+
+### Rule 4: Let Cursor Manage the Server Process
+**Problem:** Server runs fine manually but shows red/disconnected in Cursor.
+**Rule:** Do NOT run the MCP server manually in a separate terminal if it's configured in `mcp.json`. Let Cursor start/stop the server using the toggle switch in Settings -> MCP. Cursor needs to manage the process specified in the configuration.
+
+---
+
+### Rule 5: Use Stderr Logging for Debugging Startup
+**Problem:** Server fails silently when started by Cursor, making it hard to diagnose why. File logging might fail.
+**Rule:** When troubleshooting why a Cursor-managed server fails to start (red dot), temporarily change the server's Python logging to output to `stderr` instead of a file. Check Cursor's own logs for the output.
+**Example Server Code:**
+```python
+import sys
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stderr # <-- Log to stderr
+)
+logger = logging.getLogger(__name__)
+
+# Add try/except around server startup
+if __name__ == "__main__":
+    try:
+        logger.info("Starting server...")
+        mcp.run(transport="stdio")
+    except Exception as e:
+        logger.error("Server failed to start or crashed.", exc_info=True)
+        sys.exit(1) # Ensure crash is reported
+```
+
+---
+
+### Rule 6: Verify Absolute Paths
+**Problem:** Server crashes or cannot find files/scripts.
+**Rule:** Use absolute paths in the `mcp.json` configuration for both the `"command"` (Python interpreter) and the server script in `"args"`. Within the server code, use `os.path.abspath` or `os.path.expanduser` for reliability when accessing files/directories.
+
+---
+
+### Rule 7: Restart Cursor After Config Changes
+**Problem:** Changes to `mcp.json` don't seem to take effect.
+**Rule:** Always restart the Cursor application completely after modifying `~/.cursor/mcp.json` to ensure the changes are loaded. Toggling the server in settings might not be sufficient for all config changes. 
