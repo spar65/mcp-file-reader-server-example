@@ -1,0 +1,77 @@
+# --- MCP SSE Server Rules ---
+
+## Goal: Define how to build and run MCP servers that use SSE (Server-Sent Events) over HTTP.
+
+## Note: SSE servers run independently and are NOT managed directly by Cursor via the toggle in Settings -> MCP. They communicate over the network.
+
+---
+
+### Rule SSE-S1: Use SSE Transport and Specify Port
+**Problem:** Server tries to use stdio or doesn't listen on a network port.
+**Rule:** In the server script, explicitly set `transport="sse"` and provide a `port` number in the `mcp.run()` call. Choose a port that is unlikely to conflict with other services (e.g., 8080, 8081, etc.).
+**Example Server Code:**
+```python
+mcp = FastMCP("my-sse-server")
+
+if __name__ == "__main__":
+    # Correct:
+    mcp.run(transport="sse", port=8080, host="127.0.0.1") # Use 0.0.0.0 for wider accessibility if needed
+
+    # Incorrect:
+    # mcp.run(transport="stdio")
+    # mcp.run(transport="sse") # Missing port
+```
+**Note:** Specify `host="127.0.0.1"` (localhost) for local testing or `host="0.0.0.0"` if the server needs to be accessible from other machines on the network (e.g., for actual remote use).
+
+---
+
+### Rule SSE-S2: Run Server Manually and Independently
+**Problem:** Trying to manage an SSE server via the Cursor MCP settings toggle.
+**Rule:** SSE servers MUST be started manually (e.g., `python your_server_script.py` or via a start script) in a separate terminal process. Cursor does NOT manage the lifecycle (start/stop) of SSE servers through its UI settings; it only connects to them as a client.
+**Example:**
+```bash
+# Activate venv if needed
+source venv/bin/activate
+# Run the server
+python file_reader_server_sse.py
+```
+
+---
+
+### Rule SSE-S3: Configure Discovery via .mcp.json (Recommended)
+**Problem:** Clients (like Cursor) don't know where to find the running SSE server.
+**Rule:** For potential auto-discovery by clients, create or update a `.mcp.json` file *within the project directory*. This file should specify `"type": "sse"` and the full `"url"` where the server is listening.
+**Example `.mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "file-reader": { // Key matches FastMCP("file-reader")
+      "type": "sse",
+      "url": "http://127.0.0.1:8080", // URL where server is running
+      "description": "Reads files via SSE"
+      // NO "command", "args", "enabled" like in global Cursor config
+    }
+  }
+}
+```
+**Note:** This project-local `.mcp.json` is for discovery, distinct from the global `~/.cursor/mcp.json` used for Cursor-managed `stdio` servers.
+
+---
+
+### Rule SSE-S4: Ensure Network Accessibility
+**Problem:** Client cannot connect to the server (connection refused, timeout).
+**Rule:** Verify that the host and port the server is listening on (`host` and `port` in `mcp.run()`) are accessible from the client. Check firewalls or network configurations if the client is on a different machine or container. Use tools like `curl` or `telnet` to test basic connectivity to the server's URL (e.g., `curl http://127.0.0.1:8080/health`).
+
+---
+
+### Rule SSE-S5: Use Virtual Environment
+**Problem:** Server crashes on startup due to missing dependencies when run manually.
+**Rule:** Always run the SSE server within its activated virtual environment to ensure all dependencies (like `mcp`) are available. Use a startup script (like `start.sh`) that activates the venv first.
+**Example `start_sse.sh`:**
+```bash
+#!/bin/bash
+source venv/bin/activate
+python file_reader_server_sse.py
+```
+
+--- 

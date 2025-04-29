@@ -1,39 +1,45 @@
-from mcp.server.fastmcp import FastMCP
 import os
 import logging
 import sys
+from mcp.server.fastmcp import FastMCP
+# Import Starlette components
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
 # Set up logging to console (stderr)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    stream=sys.stderr  # Log to stderr instead of a file
+    stream=sys.stderr
 )
 logger = logging.getLogger(__name__)
 
-# Create MCP server instance with consistent name (file-reader with hyphen)
-mcp = FastMCP("file-reader")
+# Create MCP server instance with SSE-specific name
+mcp = FastMCP("file-reader-sse")
 
-# Define the root directory for files - use more flexible path
-ROOT_DIR = os.path.expanduser("~/mcp_data")
+# Define the root directory for files relative to the script's location
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.join(SCRIPT_DIR, "project_mcp_data_sse")
+
+# Create the directory if it doesn't exist (server-side check)
 if not os.path.exists(ROOT_DIR):
     try:
         os.makedirs(ROOT_DIR)
         logger.info(f"Created data directory at {ROOT_DIR}")
     except Exception as e:
         logger.error(f"Failed to create data directory {ROOT_DIR}: {e}", exc_info=True)
-        # Optionally exit if the data directory is critical
-        # sys.exit(1)
+        # Let Starlette/Uvicorn handle startup failure
 
 logger.info(f"Using data directory: {ROOT_DIR}")
 
+# --- Define MCP Tools --- 
 @mcp.tool()
 def read_file(filename: str) -> str:
     """
-    Read the contents of a file from the mcp_data directory.
+    Read the contents of a file from the project_mcp_data_sse directory.
     
     Args:
-        filename: Name of the file to read (must be in ~/mcp_data directory)
+        filename: Name of the file to read (must be in ./project_mcp_data_sse directory)
     
     Returns:
         The contents of the file as a string
@@ -65,13 +71,12 @@ def read_file(filename: str) -> str:
         logger.error(error_msg, exc_info=True)
         return error_msg
 
-if __name__ == "__main__":
-    try:
-        logger.info(f"Starting File Reader MCP Server with data directory: {ROOT_DIR}")
-        logger.info("Server starting with stdio transport...")
-        # Use stdio transport
-        mcp.run(transport="stdio")
-        logger.info("Server finished running.")
-    except Exception as e:
-        logger.error("Server failed to start or crashed.", exc_info=True)
-        sys.exit(1)
+# --- Create Starlette App and Mount MCP SSE Handler ---
+# This 'app' object is what Uvicorn will run
+app = Starlette(routes=[
+    Mount('/', app=mcp.sse_app()) # Mount the MCP SSE handler at the root
+])
+
+logger.info(f"Starlette app 'app' created, mounting MCP SSE app from '{mcp.name}' at root '/'.")
+
+# Note: No if __name__ == "__main__" needed as Uvicorn loads 'app' directly

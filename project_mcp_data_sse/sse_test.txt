@@ -1,0 +1,2 @@
+This file is specifically for the SSE version of the MCP file reader.
+It lives inside the project directory in project_mcp_data_sse. 

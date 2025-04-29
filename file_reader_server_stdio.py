@@ -67,11 +67,11 @@ def read_file(filename: str) -> str:
 
 if __name__ == "__main__":
     try:
-        logger.info(f"Starting File Reader MCP Server with data directory: {ROOT_DIR}")
-        logger.info("Server starting with stdio transport...")
+        logger.info(f"Starting File Reader MCP Server (stdio) with data directory: {ROOT_DIR}")
+        logger.info("Server starting with stdio transport for Cursor management...")
         # Use stdio transport
         mcp.run(transport="stdio")
         logger.info("Server finished running.")
     except Exception as e:
-        logger.error("Server failed to start or crashed.", exc_info=True)
+        logger.error("Server (stdio) failed to start or crashed.", exc_info=True)
         sys.exit(1)

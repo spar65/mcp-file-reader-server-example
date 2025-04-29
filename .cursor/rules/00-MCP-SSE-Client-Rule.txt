@@ -1,0 +1,54 @@
+# --- MCP SSE Client Interaction Rules ---
+
+## Goal: Ensure reliable interaction with independently running SSE MCP servers from clients (like Cursor or custom scripts).
+
+---
+
+### Rule SSE-C1: Use Server URL for Connection
+**Problem:** Client attempts to connect via stdio or doesn't know the server's address.
+**Rule:** Clients connecting to an SSE server MUST use the server's HTTP URL (e.g., `http://127.0.0.1:8080`). This URL might be discovered via a project's `.mcp.json` file or configured manually in the client.
+**Example Client Code (Conceptual):**
+```python
+from mcp.client import Client
+
+# Assuming server is at http://127.0.0.1:8080
+client = Client(base_url="http://127.0.0.1:8080")
+
+response = client.tools.file_reader.read_file(filename="test.txt")
+print(response)
+```
+
+---
+
+### Rule SSE-C2: Verify Server is Running Manually
+**Problem:** Client connection fails (timeout, connection refused).
+**Rule:** Unlike `stdio` servers managed by Cursor, SSE servers run independently. Before attempting to connect, ensure the SSE server process has been started manually and is actively listening on the expected URL and port. Check the server's terminal output for confirmation or errors.
+
+---
+
+### Rule SSE-C3: Utilize `.mcp.json` for Discovery (If Available)
+**Problem:** Manually configuring the server URL in the client is cumbersome or inflexible.
+**Rule:** Clients like Cursor *may* automatically discover running SSE servers if the server's project contains a correctly formatted `.mcp.json` file specifying `"type": "sse"` and the correct `"url"`. Check Cursor's documentation or behavior to see if it supports discovering servers this way.
+**Note:** Relying on discovery might require specific project structures or Cursor features.
+
+---
+
+### Rule SSE-C4: Match Server Name for Tool Usage (Same as Stdio)
+**Problem:** Cursor cannot find or use a tool from a specific server, even if connected.
+**Rule:** When invoking a tool via natural language or code, ensure the server name specified (e.g., `using mcp my-sse-server ...`) EXACTLY matches the server name key defined in the discovery `.mcp.json` (if used) and the name in the server's code (`FastMCP("my-sse-server")`).
+**Example Cursor Prompt:**
+`read test.txt using the file-reader server` // "file-reader" must match the server name
+
+---
+
+### Rule SSE-C5: Check Network Path and Firewalls
+**Problem:** Client cannot reach the server despite it running (relevant for non-localhost).
+**Rule:** If the SSE server is running on a different host or within a container, ensure there's a clear network path between the client and server. Check for firewalls, incorrect IP addresses, or port mapping issues (e.g., in Docker).
+
+---
+
+### Rule SSE-C6: Use Correct Tool Arguments (Same as Stdio)
+**Problem:** Connection is successful, but the tool call itself fails.
+**Rule:** Ensure the arguments provided to the tool match what the tool function expects and that any required resources (like files in `~/mcp_data`) are accessible *to the server process*, wherever it may be running.
+
+--- 

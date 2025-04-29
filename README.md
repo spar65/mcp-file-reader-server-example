@@ -1,6 +1,9 @@
 # MCP File Reader Server
 
-A simple MCP (Model-Control-Protocol) server for Cursor that allows reading files from a dedicated directory.
+This project provides a simple MCP (Model-Control-Protocol) server for reading files, runnable in two modes:
+
+1.  **Stdio Mode (`file-reader`):** Managed by Cursor via global config.
+2.  **SSE Mode (`file-reader-sse`):** Runs independently via manual start.
 
 ## Setup Instructions
 
@@ -25,81 +28,140 @@ A simple MCP (Model-Control-Protocol) server for Cursor that allows reading file
 4. Install the required packages:
    ```
    pip install mcp
+   # Uvicorn & Starlette are needed for running the SSE server
+   # httpx is needed for the SSE client
+   pip install "uvicorn[standard]" starlette httpx
    ```
 
 ### 3. Configuration
 
-#### Configure Cursor
+#### Option 1: Configure Cursor for Stdio Mode (`file-reader`)
 
-The MCP configuration file needs to be placed in your Cursor application settings directory:
+To let Cursor manage the `stdio` server:
 
-- **macOS**: `~/Library/Application Support/Cursor/cursor_mcp_config.json`
-- **Windows**: `%APPDATA%\Cursor\cursor_mcp_config.json`
-- **Linux**: `~/.config/Cursor/cursor_mcp_config.json`
-
-This repository already includes a `cursor_mcp_config.json` file. You may need to update the file paths to match your system.
-
-```json
-{
-  "mcpServers": {
-    "file-reader": {
-      "command": "/FULL/PATH/TO/YOUR/PROJECT/venv/bin/python",
-      "args": [
-        "/FULL/PATH/TO/YOUR/PROJECT/mcp-file-reader-example/file_reader_server.py"
-      ],
-      "env": {}
+1.  Edit your global MCP config file:
+    - **macOS**: `~/Library/Application Support/Cursor/cursor_mcp_config.json`
+    - **Windows**: `%APPDATA%\Cursor\cursor_mcp_config.json`
+    - **Linux**: `~/.config/Cursor/cursor_mcp_config.json`
+2.  Ensure an entry exists for `file-reader`, pointing to the correct venv Python and the main `file_reader_server.py` script:
+    ```json
+    {
+      "mcpServers": {
+        "file-reader": {
+          // Server name for stdio mode
+          "command": "/FULL/PATH/TO/YOUR/PROJECT/venv/bin/python",
+          "args": [
+            "/FULL/PATH/TO/YOUR/PROJECT/mcp-file-reader-example/file_reader_server.py"
+          ],
+          "enabled": true,
+          "env": {}
+        }
+        // ... other servers ...
+      }
     }
-  }
-}
-```
+    ```
+3.  _(See `cursor_mcp_config.json` in this repo for a template)_
+
+#### Option 2: Configure Project for SSE Discovery (`file-reader-sse`)
+
+The project-local `.mcp.json` file is already configured to describe the SSE server (`file-reader-sse`) running at `http://127.0.0.1:8080`. Note that the client will likely need to connect to the `/sse` subpath (`http://127.0.0.1:8080/sse`).
 
 #### Data Directory
 
-By default, the server uses `~/mcp_data` as the directory for storing files. Make sure this directory exists or the server will create it for you.
+- The **stdio** server (`file-reader`) uses `~/mcp_data` by default (in your home directory).
+- The **SSE** server (`file-reader-sse`) uses `./project_mcp_data_sse` by default (within this project directory).
+
+Make sure these directories exist before running the respective servers. The `./start_sse.sh` script will create `./project_mcp_data_sse` if it's missing.
 
 ### 4. Running the Server
 
-1. Use the provided start script:
+Choose **one** method:
 
-   ```
-   ./start.sh
-   ```
+#### Method A: Stdio Mode (`file-reader` via Cursor)
 
-   Or manually run:
+1.  Complete the global configuration (Option 1 above).
+2.  Restart Cursor.
+3.  Go to Cursor Settings -> MCP.
+4.  Find `file-reader` and toggle it ON.
 
-   ```
-   source venv/bin/activate
-   python file_reader_server.py
-   ```
+#### Method B: SSE Mode (`file-reader-sse` Manually)
 
-2. The server will start and listen for requests from Cursor.
+Use the provided start script. In your terminal:
+
+```bash
+./start_sse.sh
+```
+
+This script ensures dependencies (including `uvicorn`, `starlette`) are installed and runs the Uvicorn ASGI server, loading the Starlette `app` defined in `file_reader_server_sse.py`. The Starlette app mounts the MCP server's SSE handler (`mcp.sse_app()`) at the root path.
+
+The server will start listening on `http://127.0.0.1:8080`.
 
 ### 5. Using the Server in Cursor
 
-Once the server is running, you can access it from Cursor by typing:
+- **If using Stdio Mode (Method A):**
+  Reads from `~/mcp_data`:
+  ```
+  read test.txt using the file-reader server
+  ```
+- **If using SSE Mode (Method B):**
+  Assuming Cursor discovers the server via `.mcp.json`. Reads from `./project_mcp_data_sse`:
+  ```
+  read sse_test.txt using the file-reader-sse server
+  ```
+  _(Note: Use the specific server name `file-reader-sse` and a filename expected in `./project_mcp_data_sse`)_
 
-```
-read test.txt using the file-reader server
-```
+### 6. Using the SSE Client Script (Manual Testing)
 
-or
+This project includes a Python client script (`file_reader_sse_client.py`) and a wrapper shell script (`run_sse_client.sh`) to test the SSE server independently using the `mcp` library's SSE client capabilities.
 
-```
-using mcp file-reader tell me what is in test.txt
-```
+1.  **Ensure the SSE server is running (use `./start_sse.sh`).**
+2.  Run the client wrapper script in your terminal:
+
+    ```bash
+    # Connects, initializes, lists tools, and calls read_file for sse_test.txt
+    ./run_sse_client.sh
+
+    # Tries to read a different file (e.g., another_sse.txt)
+    ./run_sse_client.sh another_sse.txt
+    ```
+
+    _(The wrapper script ensures dependencies like `httpx` are installed and uses the correct Python.)_
+
+3.  The client will connect to `http://127.0.0.1:8080/sse`, initialize the MCP session, call the `read_file` tool by name, and print the response or any errors.
 
 ## Troubleshooting
 
-- Make sure the server is running when you try to access it from Cursor
-- Check the `server.log` file for any error messages
-- Verify that your configuration file paths are correct
-- Restart Cursor after making changes to the configuration files
+- **Stdio:** Check Cursor Settings -> MCP for status (green dot), verify global config paths, check `stderr` via Cursor logs if startup fails.
+- **SSE:** Ensure the server is running manually (use `./start_sse.sh`), check its terminal output (`stderr`) for errors, verify the client can reach `http://127.0.0.1:8080/sse`.
+- Restart Cursor after config changes.
 
 ## Advanced Usage
 
-- The server logs all operations to `server.log` in the server directory
-- You can modify the `file_reader_server.py` file to add more functionality
+- The `stdio` server uses `file_reader_server.py`.
+- The `sse` server uses `file_reader_server_sse.py`.
+- Logging is to `stderr` for both.
+- A basic client for the SSE server is provided in `file_reader_sse_client.py`.
+- A startup script for the SSE server is provided: `start_sse.sh`.
+- The SSE server uses Starlette to mount the MCP SSE application (`mcp.sse_app()`) which is then run by Uvicorn via `start_sse.sh`.
+- A wrapper script for the SSE client is provided: `run_sse_client.sh`.
+- The SSE client script uses `mcp.client.sse.sse_client` and `mcp.ClientSession` to interact with the server.
 
 ## License
 
 MIT
+
+## Server Details
+
+- **`file-reader` (Stdio):**
+  - Script: `file_reader_server.py`
+  - Transport: Stdio
+  - Management: Via Cursor global config (`~/.cursor/mcp.json`) & Settings toggle.
+  - Rules: `00-MCP-Server-Rules.txt`, `00-MCP-Client-Rules.txt`
+  - Data Dir: `~/mcp_data`
+- **`file-reader-sse` (SSE):**
+  - Script: `file_reader_server_sse.py` (defines FastMCP instance and Starlette app)
+  - Transport: SSE via Starlette/Uvicorn (listens on `http://127.0.0.1:8080`, client connects to `/sse` path)
+  - Management: Manual start/stop via `start_sse.sh` (runs `uvicorn ...:app`).
+  - Discovery: Via project `.mcp.json`.
+  - Rules: `00-MCP-SSE-Server-Rule.txt`, `00-MCP-SSE-Client-Rule.txt`
+  - Data Dir: `./project_mcp_data_sse` (relative to project root)

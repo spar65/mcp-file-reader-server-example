@@ -1,8 +1,25 @@
 {
-  "file-reader": {
-    "type": "sse",
-    "command": "python",
-    "args": ["/Users/spehargreg/Development/mcp-file-reader-example/file_reader_server.py"],
-    "env": {}
+  "mcpServers": {
+    "file-reader-sse": {
+      "type": "sse",
+      "url": "http://127.0.0.1:8080",
+      "description": "Reads files from ~/mcp_data via SSE/HTTP (Runs Independently)",
+      "tools": [
+          {
+              "name": "read_file",
+              "description": "Read the contents of a file from the mcp_data directory.",
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "filename": {
+                          "type": "string",
+                          "description": "Name of the file to read (must be in ~/mcp_data directory)"
+                      }
+                  },
+                  "required": ["filename"]
+              }
+          }
+      ]
+    }
   }
 }
